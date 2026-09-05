@@ -644,17 +644,17 @@ static int32_t imtst_example_after_each_count = 0;
 static int32_t imtst_example_before_test_count = 0;
 static int32_t imtst_example_after_test_count = 0;
 
-int32_t passing_test() {
+int32_t passing_test(void) {
     IMTST_ASSERT(true);
     return 0;
 }
 
-int32_t failing_test() {
+int32_t failing_test(void) {
     IMTST_ASSERT(false);
     return 0;
 }
 
-int32_t allocating_without_leak_test() {
+int32_t allocating_without_leak_test(void) {
     imtst_example_total_allocated_bytes += 64;
     imtst_example_currently_in_use_bytes += 64;
     imtst_example_currently_in_use_bytes -= 64;
@@ -662,21 +662,21 @@ int32_t allocating_without_leak_test() {
     return 0;
 }
 
-int32_t leaking_test() {
+int32_t leaking_test(void) {
     imtst_example_total_allocated_bytes += 128;
     imtst_example_currently_in_use_bytes += 128;
 
     return 0;
 }
 
-int32_t before_after_test() {
+int32_t before_after_test(void) {
     IMTST_ASSERT(imtst_example_before_test_count == 1);
     IMTST_ASSERT(imtst_example_after_test_count == 0);
 
     return 0;
 }
 
-int32_t suite_hooks_test() {
+int32_t suite_hooks_test(void) {
     IMTST_ASSERT(imtst_example_before_all_count == 1);
     IMTST_ASSERT(imtst_example_after_all_count == 0);
     IMTST_ASSERT(imtst_example_before_each_count > imtst_example_after_each_count);
@@ -684,45 +684,45 @@ int32_t suite_hooks_test() {
     return 0;
 }
 
-uint64_t example_get_total_allocated_bytes() {
+uint64_t example_get_total_allocated_bytes(void) {
     return imtst_example_total_allocated_bytes;
 }
 
-uint64_t example_get_currently_in_use_bytes() {
+uint64_t example_get_currently_in_use_bytes(void) {
     return imtst_example_currently_in_use_bytes;
 }
 
-void before_all() {
+void before_all(void) {
     imtst_example_before_all_count++;
     fprintf(imtst_g_output_file, "BEFORE_ALL\n");
 }
 
-void before_each() {
+void before_each(void) {
     imtst_example_before_each_count++;
     fprintf(imtst_g_output_file, "BEFORE_EACH\n");
 }
 
-void after_all() {
+void after_all(void) {
     imtst_example_after_all_count++;
     fprintf(imtst_g_output_file, "AFTER_ALL\n");
 }
 
-void after_each() {
+void after_each(void) {
     imtst_example_after_each_count++;
     fprintf(imtst_g_output_file, "AFTER_EACH\n");
 }
 
-void before() {
+void before(void) {
     imtst_example_before_test_count++;
     fprintf(imtst_g_output_file, "BEFORE_TEST\n");
 }
 
-void after() {
+void after(void) {
     imtst_example_after_test_count++;
     fprintf(imtst_g_output_file, "AFTER_TEST\n");
 }
 
-int main() {
+int main(void) {
     imtst_allocation_tracking tracking = {
         "Test Allocator",
         example_get_total_allocated_bytes,
