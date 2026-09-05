@@ -698,6 +698,23 @@ void before_test(void) { g_test_state.before_test_call_count++; }
 int32_t passing_test(void) { g_test_state.success_tests++; IMTST_ASSERT(1 + 2 == 3); return 0; }
 int32_t failing_test(void) { g_test_state.failed_tests++; IMTST_ASSERT(1 + 2 == 4); return 0; }
 
+void basic_passing_result_test(void) {
+    imtst_stop_on_first_fail(false);
+    imtst_turn_on_only_mode(false);
+    imtst_set_output_file(stdout);
+
+    IMTST_BEGIN_TEST_SUITE("Basic passing result")
+        IMTST_TEST("Passing test", passing_test)
+    IMTST_END_TEST_SUITE()
+
+    TESTING_ASSERT_EQ(imtst_result(), true);
+
+    TESTING_ASSERT_EQ(g_test_state.success_tests, 1);
+    TESTING_ASSERT_EQ(g_test_state.failed_tests, 0);
+
+    clear_testing_state(&g_test_state);
+}
+
 void hooks_and_assertions_test(void) {
     imtst_stop_on_first_fail(false);
     imtst_turn_on_only_mode(false);
@@ -736,6 +753,65 @@ void hooks_and_assertions_test(void) {
     TESTING_ASSERT_EQ(g_test_state.before_test_call_count, 2);
 
     // Rest state for next test
+    clear_testing_state(&g_test_state);
+}
+
+void skipped_behavior_test(void) {
+    imtst_stop_on_first_fail(false);
+    imtst_turn_on_only_mode(false);
+    imtst_set_output_file(stdout);
+
+    IMTST_BEGIN_TEST_SUITE2("Skipped test behavior", before_all, before_each, after_all, after_each)
+        IMTST_TEST_SKIP2("Skipped test", passing_test, before_test, after_test)
+    IMTST_END_TEST_SUITE()
+
+    IMTST_BEGIN_TEST_SUITE_SKIP2("Skipped suite behavior", before_all, before_each, after_all, after_each)
+        IMTST_TEST2("Test inside skipped suite", passing_test, before_test, after_test)
+    IMTST_END_TEST_SUITE()
+
+    TESTING_ASSERT_EQ(imtst_result(), true);
+
+    TESTING_ASSERT_EQ(g_test_state.success_tests, 0);
+    TESTING_ASSERT_EQ(g_test_state.failed_tests, 0);
+
+    TESTING_ASSERT_EQ(g_test_state.before_all_call_count, 1);
+    TESTING_ASSERT_EQ(g_test_state.before_each_call_count, 0);
+    TESTING_ASSERT_EQ(g_test_state.after_all_call_count, 1);
+    TESTING_ASSERT_EQ(g_test_state.after_each_call_count, 0);
+
+    TESTING_ASSERT_EQ(g_test_state.after_test_call_count, 0);
+    TESTING_ASSERT_EQ(g_test_state.before_test_call_count, 0);
+
+    clear_testing_state(&g_test_state);
+}
+
+void only_mode_test(void) {
+    imtst_stop_on_first_fail(false);
+    imtst_turn_on_only_mode(true);
+    imtst_set_output_file(stdout);
+
+    IMTST_BEGIN_TEST_SUITE("Normal suite filtered by only mode")
+        IMTST_TEST_ONLY("Only test inside normal suite", passing_test)
+    IMTST_END_TEST_SUITE()
+
+    IMTST_BEGIN_TEST_SUITE_ONLY2("Only suite behavior", before_all, before_each, after_all, after_each)
+        IMTST_TEST("Normal test inside only suite", passing_test)
+        IMTST_TEST_ONLY2("Only test inside only suite", passing_test, before_test, after_test)
+    IMTST_END_TEST_SUITE()
+
+    TESTING_ASSERT_EQ(imtst_result(), true);
+
+    TESTING_ASSERT_EQ(g_test_state.success_tests, 1);
+    TESTING_ASSERT_EQ(g_test_state.failed_tests, 0);
+
+    TESTING_ASSERT_EQ(g_test_state.before_all_call_count, 1);
+    TESTING_ASSERT_EQ(g_test_state.before_each_call_count, 1);
+    TESTING_ASSERT_EQ(g_test_state.after_all_call_count, 1);
+    TESTING_ASSERT_EQ(g_test_state.after_each_call_count, 1);
+
+    TESTING_ASSERT_EQ(g_test_state.after_test_call_count, 1);
+    TESTING_ASSERT_EQ(g_test_state.before_test_call_count, 1);
+
     clear_testing_state(&g_test_state);
 }
 
@@ -827,7 +903,10 @@ void memory_tracking_test(void) {
 }
 
 int main(void) {
+    basic_passing_result_test();
     hooks_and_assertions_test();
+    skipped_behavior_test();
+    only_mode_test();
     memory_tracking_test();
 
     return 0;
