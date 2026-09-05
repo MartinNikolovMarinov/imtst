@@ -191,7 +191,7 @@ void imtst_stop_on_first_fail(bool toggle);
 void imtst_turn_on_only_mode(bool toggle);
 void imtst_set_output_file(FILE* file);
 int32_t imtst_failed_assert(const char* expr, const char* file, uint32_t line, const char* function);
-void imtst_result(void);
+bool imtst_result(void);
 uint32_t imtst_next_test_id(void);
 
 #ifdef __cplusplus
@@ -455,12 +455,14 @@ int32_t imtst_run_test(imtst_test_case* tcase) {
                 ? in_use_after_test_case - in_use_before_test_case
                 : 0;
 
+            bool no_memory_leaks = (in_use_after_test_case <= in_use_before_test_case);
+
             char allocated_bytes_str[IMTST_MEMORY_USED_TO_STR_BUFFER_SIZE];
             imtst_memory_used_to_str(allocated_bytes_str, allocated_bytes_in_test_case);
             char in_use_bytes_str[IMTST_MEMORY_USED_TO_STR_BUFFER_SIZE];
             imtst_memory_used_to_str(in_use_bytes_str, in_use_bytes_in_test_case);
 
-            if (in_use_after_test_case <= in_use_before_test_case) {
+            if (no_memory_leaks) {
                 fprintf(
                     imtst_g_output_file,
                     "  [TEST № %d %s] %s [time: %s, memory: { allocated: %s, in_use: %s }]\n",
@@ -561,12 +563,20 @@ void imtst_run_test_suite(imtst_test_suite* suite) {
 
     int32_t failed_count = 0;
     for (size_t i = 0; i < suite->test_cases_count; i++) {
-        if (suite->before_each) {
+        imtst_test_case* tcase = &suite->test_cases[i];
+
+        bool is_skipped = tcase->skipped;
+        bool is_part_of_only_runs = !imtst_g_only_mode_active || tcase->only;
+        bool will_run = !is_skipped && is_part_of_only_runs;
+
+        if (will_run && suite->before_each) {
             suite->before_each();
         }
-        int32_t ret = imtst_run_test(&suite->test_cases[i]);
+
+        int32_t ret = imtst_run_test(tcase);
         if (ret != 0) failed_count++;
-        if (suite->after_each) {
+
+        if (will_run && suite->after_each) {
             suite->after_each();
         }
     }
@@ -622,141 +632,203 @@ uint32_t imtst_next_test_id(void) {
     return next_id++;
 }
 
-void imtst_result(void) {
+bool imtst_result(void) {
     if (imtst_g_ok) {
-        fprintf(imtst_g_output_file, "\n" IMTST_ANSI_BOLD(IMTST_ANSI_GREEN("Tests OK")) "\n");
+        fprintf(imtst_g_output_file, "\n" IMTST_ANSI_BOLD(IMTST_ANSI_GREEN("Tests OK")) "\n\n");
     }
     else {
-        fprintf(imtst_g_output_file, "\n" IMTST_ANSI_BOLD(IMTST_ANSI_RED("Tests FAILED")) "\n");
+        fprintf(imtst_g_output_file, "\n" IMTST_ANSI_BOLD(IMTST_ANSI_RED("Tests FAILED")) "\n\n");
     }
+
+    return imtst_g_ok;
 }
 
 #endif // IMTST_IMPLEMENTATION
 
 #ifdef IMTST_RUN_TESTS
 
-static uint64_t imtst_example_total_allocated_bytes = 0;
-static uint64_t imtst_example_currently_in_use_bytes = 32;
-static int32_t imtst_example_before_all_count = 0;
-static int32_t imtst_example_before_each_count = 0;
-static int32_t imtst_example_after_all_count = 0;
-static int32_t imtst_example_after_each_count = 0;
-static int32_t imtst_example_before_test_count = 0;
-static int32_t imtst_example_after_test_count = 0;
+#define TESTING_ASSERT_EQ(a, b)                                                                                        \
+do {                                                                                                                   \
+    if ((a) != (b)) {                                                                                                  \
+        printf(                                                                                                        \
+            "Expectation failed (%s (%" PRId64 ") == %s (%" PRId64 ")) on %s:%d\n",                                    \
+            #a, (int64_t)(a), #b, (int64_t)(b), __FILE__, __LINE__                                                     \
+        );                                                                                                             \
+        abort();                                                                                                       \
+    }                                                                                                                  \
+} while (0)
 
-int32_t passing_test(void) {
-    IMTST_ASSERT(true);
-    return 0;
+typedef struct test_state {
+    uint64_t allocated_bytes;
+    uint64_t currently_in_use_bytes;
+
+    uint32_t failed_tests;
+    uint32_t success_tests;
+
+    uint32_t before_all_call_count;
+    uint32_t before_each_call_count;
+    uint32_t after_all_call_count;
+    uint32_t after_each_call_count;
+    uint32_t before_test_call_count;
+    uint32_t after_test_call_count;
+
+} test_state;
+
+static test_state g_test_state;
+
+void clear_testing_state(test_state* s) {
+    memset(s, 0, sizeof(*s));
+
+    imtst_g_allocator_name = IMTST_NULL;
+    imtst_g_total_allocated_bytes_cb = IMTST_NULL;
+    imtst_g_currently_in_use_bytes_cb = IMTST_NULL;
+    imtst_g_stop_on_first_fail = true;
+    imtst_g_ok = true;
+    imtst_g_only_mode_active = false;
+    imtst_g_output_file = IMTST_NULL;
 }
 
-int32_t failing_test(void) {
-    IMTST_ASSERT(false);
-    return 0;
-}
+void before_all(void) { g_test_state.before_all_call_count++; }
+void before_each(void) { g_test_state.before_each_call_count++; }
+void after_all(void) { g_test_state.after_all_call_count++; }
+void after_each(void) { g_test_state.after_each_call_count++; }
+void after_test(void) { g_test_state.after_test_call_count++; }
+void before_test(void) { g_test_state.before_test_call_count++; }
 
-int32_t allocating_without_leak_test(void) {
-    imtst_example_total_allocated_bytes += 64;
-    imtst_example_currently_in_use_bytes += 64;
-    imtst_example_currently_in_use_bytes -= 64;
+int32_t passing_test(void) { g_test_state.success_tests++; IMTST_ASSERT(1 + 2 == 3); return 0; }
+int32_t failing_test(void) { g_test_state.failed_tests++; IMTST_ASSERT(1 + 2 == 4); return 0; }
 
-    return 0;
-}
-
-int32_t leaking_test(void) {
-    imtst_example_total_allocated_bytes += 128;
-    imtst_example_currently_in_use_bytes += 128;
-
-    return 0;
-}
-
-int32_t before_after_test(void) {
-    IMTST_ASSERT(imtst_example_before_test_count == 1);
-    IMTST_ASSERT(imtst_example_after_test_count == 0);
-
-    return 0;
-}
-
-int32_t suite_hooks_test(void) {
-    IMTST_ASSERT(imtst_example_before_all_count == 1);
-    IMTST_ASSERT(imtst_example_after_all_count == 0);
-    IMTST_ASSERT(imtst_example_before_each_count > imtst_example_after_each_count);
-
-    return 0;
-}
-
-uint64_t example_get_total_allocated_bytes(void) {
-    return imtst_example_total_allocated_bytes;
-}
-
-uint64_t example_get_currently_in_use_bytes(void) {
-    return imtst_example_currently_in_use_bytes;
-}
-
-void before_all(void) {
-    imtst_example_before_all_count++;
-    fprintf(imtst_g_output_file, "BEFORE_ALL\n");
-}
-
-void before_each(void) {
-    imtst_example_before_each_count++;
-    fprintf(imtst_g_output_file, "BEFORE_EACH\n");
-}
-
-void after_all(void) {
-    imtst_example_after_all_count++;
-    fprintf(imtst_g_output_file, "AFTER_ALL\n");
-}
-
-void after_each(void) {
-    imtst_example_after_each_count++;
-    fprintf(imtst_g_output_file, "AFTER_EACH\n");
-}
-
-void before(void) {
-    imtst_example_before_test_count++;
-    fprintf(imtst_g_output_file, "BEFORE_TEST\n");
-}
-
-void after(void) {
-    imtst_example_after_test_count++;
-    fprintf(imtst_g_output_file, "AFTER_TEST\n");
-}
-
-int main(void) {
-    imtst_allocation_tracking tracking = {
-        "Test Allocator",
-        example_get_total_allocated_bytes,
-        example_get_currently_in_use_bytes
-    };
-    imtst_set_allocation_tracking(tracking);
-
+void hooks_and_assertions_test(void) {
     imtst_stop_on_first_fail(false);
     imtst_turn_on_only_mode(false);
     imtst_set_output_file(stdout);
 
-    IMTST_BEGIN_TEST_SUITE_ONLY2("Hooks and assertions", before_all, before_each, after_all, after_each)
-        IMTST_TEST_ONLY("Passing assertion", passing_test)
-        IMTST_TEST_ONLY2("Per-test hooks", before_after_test, before, after)
-        IMTST_TEST_ONLY("Suite hooks", suite_hooks_test)
-        IMTST_TEST_ONLY("Failing assertion", failing_test)
+    IMTST_BEGIN_TEST_SUITE2("Hooks and Assertions", before_all, before_each, after_all, after_each)
+        IMTST_TEST("Passing Assertion",     passing_test)
+        IMTST_TEST("Failing Assertion",     failing_test)
+        IMTST_TEST2("Before & After Hooks", passing_test, before_test, after_test)
+        IMTST_TEST2("Before Hook",          passing_test, before_test, IMTST_NULL)
+        IMTST_TEST2("After Hook",           failing_test, IMTST_NULL,  after_test) // NOTE: after should run on failed tests if on first fail is false.
     IMTST_END_TEST_SUITE()
 
-    IMTST_BEGIN_TEST_SUITE_ONLY("Memory tracking")
-        IMTST_TEST_ONLY("Baseline memory is allowed", passing_test)
-        IMTST_TEST_ONLY("Allocation freed before test end", allocating_without_leak_test)
-        IMTST_TEST_ONLY("Allocation leaked by test", leaking_test)
+    // This should run only the after all hook.
+    IMTST_BEGIN_TEST_SUITE2("Hooks and Assertions With One Skipped Test", IMTST_NULL, before_each, after_all, after_each)
+        IMTST_TEST_SKIP("Skipped", passing_test)
     IMTST_END_TEST_SUITE()
 
-    IMTST_BEGIN_TEST_SUITE_ONLY("Skip handling")
-        IMTST_TEST_ONLY("Normal test still runs", passing_test)
-        IMTST_TEST_SKIP("Skipped failing test", failing_test)
+    // No hooks should be called by this:
+    IMTST_BEGIN_TEST_SUITE_SKIP2("Skipped Test Suite", before_all, before_each, after_all, after_each)
+        IMTST_TEST2("Non-skipped test inside a skipped suite", passing_test, before_test, after_test)
+        IMTST_TEST_ONLY2("Only test inside a skipped suite", passing_test, before_test, after_test)
     IMTST_END_TEST_SUITE()
 
-    IMTST_BEGIN_TEST_SUITE_SKIP("Skipped suite")
-        IMTST_TEST("Failing test in skipped suite", failing_test)
+    TESTING_ASSERT_EQ(imtst_result(), false); // there were failing tests
+
+    TESTING_ASSERT_EQ(g_test_state.success_tests, 3);
+    TESTING_ASSERT_EQ(g_test_state.failed_tests, 2);
+
+    TESTING_ASSERT_EQ(g_test_state.before_all_call_count, 1);
+    TESTING_ASSERT_EQ(g_test_state.before_each_call_count, 5);
+    TESTING_ASSERT_EQ(g_test_state.after_all_call_count, 2);
+    TESTING_ASSERT_EQ(g_test_state.after_each_call_count, 5);
+
+    TESTING_ASSERT_EQ(g_test_state.after_test_call_count, 2);
+    TESTING_ASSERT_EQ(g_test_state.before_test_call_count, 2);
+
+    // Rest state for next test
+    clear_testing_state(&g_test_state);
+}
+
+uint64_t bytes_allocated(void) { return g_test_state.allocated_bytes; }
+uint64_t currently_in_use_bytes(void) { return g_test_state.currently_in_use_bytes; }
+
+int32_t allocating_without_leak_test(void) {
+    g_test_state.allocated_bytes += 32;
+    g_test_state.success_tests++;
+    return 0;
+}
+
+int32_t leaking_test(void) {
+    g_test_state.allocated_bytes += 16;
+    g_test_state.currently_in_use_bytes += 16;
+    g_test_state.failed_tests++;
+    return 0;
+}
+
+int32_t skipped_memory_tracking_test(void) {
+    g_test_state.allocated_bytes += 1024;
+    g_test_state.currently_in_use_bytes += 1024;
+    g_test_state.failed_tests++;
+    return 0;
+}
+
+int32_t only_filtered_memory_tracking_test(void) {
+    g_test_state.allocated_bytes += 2048;
+    g_test_state.currently_in_use_bytes += 2048;
+    g_test_state.failed_tests++;
+    return 0;
+}
+
+void memory_tracking_test(void) {
+    imtst_allocation_tracking tracking = {
+        "Test Allocator",
+        bytes_allocated,
+        currently_in_use_bytes
+    };
+    imtst_set_allocation_tracking(tracking);
+
+    imtst_stop_on_first_fail(true);
+    imtst_turn_on_only_mode(false);
+    imtst_set_output_file(stdout);
+
+    const uint64_t baseline = 64;
+    g_test_state.allocated_bytes = baseline;
+    g_test_state.currently_in_use_bytes = baseline;
+
+    IMTST_BEGIN_TEST_SUITE("Memory tracking")
+        IMTST_TEST("Baseline memory is allowed", passing_test)
+        IMTST_TEST("Allocation freed before test end", allocating_without_leak_test)
+        IMTST_TEST("Allocation leaked by test", leaking_test)
     IMTST_END_TEST_SUITE()
 
-    imtst_result();
+    // Skipped tests should not affect memory tracking
+    IMTST_BEGIN_TEST_SUITE("Skipped tests don't track memory")
+        IMTST_TEST_SKIP("Skipped leaking test", skipped_memory_tracking_test)
+    IMTST_END_TEST_SUITE()
+    IMTST_BEGIN_TEST_SUITE_SKIP("Skipped tests suites don't track memory")
+        IMTST_TEST("Skipped Suite leaking test", skipped_memory_tracking_test)
+    IMTST_END_TEST_SUITE()
+
+    // When only mode is active tests that are filtered should not affect memory tracking.
+    imtst_turn_on_only_mode(true);
+    IMTST_BEGIN_TEST_SUITE_ONLY("Only-mode filtered tests don't track memory")
+        IMTST_TEST("Filtered leaking test", only_filtered_memory_tracking_test)
+    IMTST_END_TEST_SUITE()
+    imtst_turn_on_only_mode(false);
+
+    TESTING_ASSERT_EQ(imtst_result(), false); // the leaking test should fail the global result
+
+    TESTING_ASSERT_EQ(g_test_state.allocated_bytes, 64 + 32 + 16);
+    TESTING_ASSERT_EQ(g_test_state.currently_in_use_bytes, 64 + 16);
+
+    TESTING_ASSERT_EQ(g_test_state.success_tests, 2);
+    TESTING_ASSERT_EQ(g_test_state.failed_tests, 1);
+
+    TESTING_ASSERT_EQ(g_test_state.before_all_call_count, 0);
+    TESTING_ASSERT_EQ(g_test_state.before_each_call_count, 0);
+    TESTING_ASSERT_EQ(g_test_state.after_all_call_count, 0);
+    TESTING_ASSERT_EQ(g_test_state.after_each_call_count, 0);
+
+    TESTING_ASSERT_EQ(g_test_state.after_test_call_count, 0);
+    TESTING_ASSERT_EQ(g_test_state.before_test_call_count, 0);
+
+    // Rest state for next test
+    clear_testing_state(&g_test_state);
+}
+
+int main(void) {
+    hooks_and_assertions_test();
+    memory_tracking_test();
 
     return 0;
 }
