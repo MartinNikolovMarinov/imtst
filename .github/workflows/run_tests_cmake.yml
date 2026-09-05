@@ -1,0 +1,107 @@
+name: CMake Run Tests
+
+on: [ workflow_dispatch ] # Trigger manually only
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: ${{ matrix.config.name }} - ${{ matrix.config.cmake_preset }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {
+              name: "Ubuntu with GCC Debug",
+              os: ubuntu-latest,
+              cc: "gcc",
+              cxx: "g++",
+              cmake_preset: "gcc-debug"
+            }
+          - {
+              name: "Ubuntu with GCC Release",
+              os: ubuntu-latest,
+              cc: "gcc",
+              cxx: "g++",
+              cmake_preset: "gcc-release"
+            }
+          - {
+              name: "Ubuntu with Clang Debug",
+              os: ubuntu-latest,
+              cc: "clang",
+              cxx: "clang++",
+              cmake_preset: "clang-debug"
+            }
+          - {
+              name: "Ubuntu with Clang Release",
+              os: ubuntu-latest,
+              cc: "clang",
+              cxx: "clang++",
+              cmake_preset: "clang-release"
+            }
+          - {
+              name: "MacOS with Clang Debug",
+              os: macos-latest,
+              cc: "clang", cxx: "clang++",
+              cmake_preset: "clang-debug"
+            }
+          - {
+              name: "MacOS with Clang Release",
+              os: macos-latest,
+              cc: "clang", cxx: "clang++",
+              cmake_preset: "clang-release"
+            }
+          - {
+              name: "Windows with MSVC Debug static",
+              os: windows-latest,
+              cc: "cl", cxx: "cl",
+              environment_script: "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat",
+              cmake_preset: "msvc-debug",
+              cmake_config: "",
+              cmake_build_config: "--config Debug",
+              ctest_config: "-C Debug",
+            }
+          - {
+              name: "Windows with MSVC Release static",
+              os: windows-latest,
+              cc: "cl", cxx: "cl",
+              environment_script: "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat",
+              cmake_preset: "msvc-release",
+              cmake_config: "",
+              cmake_build_config: "--config Release",
+              ctest_config: "-C Release",
+            }
+
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v5
+
+    - name: Version of cmake
+      run: cmake --version
+
+    - name: List cmake presets
+      run: cmake -S tests --list-presets
+
+    - name: Run cmake
+      run: |
+        cmake \
+          -Dcc="${{ matrix.config.cc }}" \
+          -Dcxx="${{ matrix.config.cxx }}" \
+          -Dcmake_preset="${{ matrix.config.cmake_preset }}" \
+          -Drunner_os="${{ runner.os }}" \
+          -P .github/scripts/configure-cmake.cmake
+
+    - name: Build
+      run: |
+        cmake \
+          -Dcmake_build_config="${{ matrix.config.cmake_build_config }}" \
+          -P .github/scripts/build-cmake.cmake
+
+    - name: Run tests
+      run: |
+        cmake \
+          -Dctest_config="${{ matrix.config.ctest_config }}" \
+          -P .github/scripts/test-cmake.cmake
