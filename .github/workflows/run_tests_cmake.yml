@@ -91,6 +91,7 @@ jobs:
           -Dcc="${{ matrix.config.cc }}" \
           -Dcxx="${{ matrix.config.cxx }}" \
           -Dcmake_preset="${{ matrix.config.cmake_preset }}" \
+          -Denvironment_script="${{ matrix.config.environment_script }}" \
           -Drunner_os="${{ runner.os }}" \
           -P .github/scripts/configure-cmake.cmake
 

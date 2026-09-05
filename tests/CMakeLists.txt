@@ -42,7 +42,9 @@ enable_testing()
 
 add_executable(${c_target} main.c)
 target_include_directories(${c_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_compile_definitions(${c_target} PRIVATE _POSIX_C_SOURCE=200809L)
+if(NOT WIN32)
+    target_compile_definitions(${c_target} PRIVATE _POSIX_C_SOURCE=200809L)
+endif()
 set_test_options(${c_target})
 add_test(NAME ${c_target} COMMAND ${c_target})
 
