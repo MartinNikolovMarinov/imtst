@@ -10,9 +10,6 @@ if(NOT DEFINED cmake_preset)
     message(FATAL_ERROR "cmake_preset is required")
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/load-environment-script.cmake")
-load_environment_script()
-
 set(ENV{CC} "${cc}")
 set(ENV{CXX} "${cxx}")
 
