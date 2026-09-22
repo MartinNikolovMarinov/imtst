@@ -296,6 +296,7 @@ static FILE* imtst_g_output_file = IMTST_NULL;
 #if defined(_WIN32)
 
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
 
 static uint64_t imtst_get_time(void)
